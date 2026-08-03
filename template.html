@@ -42,6 +42,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-r
 .clueline{flex:1;background:var(--panel-2);display:flex;align-items:center;gap:10px;
   padding:6px 12px;overflow-x:auto;overflow-y:hidden;white-space:nowrap}
 .clueline .ct{font-size:14px;color:var(--ink);line-height:1.25;white-space:normal}
+.clueline .ct.en{font-size:16px;font-weight:600;letter-spacing:.01em}
 .clueline .sk{font-size:17px;letter-spacing:.12em;font-family:var(--display);direction:rtl;flex:none}
 .clueline .sk u{text-decoration:none;color:var(--ink-3)}
 .clueline .sk b{font-weight:600}
@@ -69,6 +70,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-r
 .cell.cluecell.hl{background:#B9B9BE}
 .slot{flex:1 1 0;position:relative;display:flex;align-items:center;justify-content:center;
   padding:1px 3px;min-height:0;text-align:center}
+.slot.en span{direction:ltr;unicode-bidi:isolate;font-weight:700;letter-spacing:0}
 .slot.dir-a{padding-left:13px}
 .slot.dir-d{padding-bottom:10px}
 .slot+.slot{border-top:1px solid rgba(0,0,0,.35)}
@@ -196,121 +198,87 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-r
 </div>
 
 <script>
-const RAW = `__WORDS__`;
-const CONNRAW = `__CONN__`;
+const RAW = `__BANK__`;
 
-/* ---------- word bank ---------- */
-const ROWS = RAW.trim().split("\n").map(l=>{const i=l.indexOf("|");return {w:l.slice(0,i),cl:l.slice(i+1)};});
+/* ---------- word bank ----------
+   Each row is  level | language | clue | answer;answer;...
+   A clue may have several accepted translations; the grid takes whichever one fits,
+   the way a printed crossword commits to one sense of an ambiguous clue. */
 const FIN={"ך":"כ","ם":"מ","ן":"נ","ף":"פ","ץ":"צ"};
 const norm=s=>s.replace(/[ךםןףץ]/g,m=>FIN[m]);
-const PER_LEVEL=8;
 
-/* A clue has to fit inside one small square, so keep the first sense or two and
-   leave the full definition to the bar under the grid. */
+/* A Hebrew definition has to fit inside one small square: keep the first sense or two
+   and leave the full text to the bar above the grid. English clues are short already. */
 function shortClue(s){
   const parts=s.split(/[;,]/).map(t=>t.trim()).filter(Boolean);
   let out=parts[0];
-  if(out.length<=13 && parts[1] && (out+", "+parts[1]).length<=25) out+=", "+parts[1];
+  if(out.length<=13&&parts[1]&&(out+", "+parts[1]).length<=25) out+=", "+parts[1];
   if(out.length>30){
     let acc="";
-    for(const word of out.split(" ")){
-      if((acc+" "+word).trim().length>27) break;
-      acc=(acc+" "+word).trim();
-    }
+    for(const w of out.split(" ")){ if((acc+" "+w).trim().length>27) break; acc=(acc+" "+w).trim(); }
     out=acc+"…";
   }
   return out;
 }
-/* A phrase runs through the squares as one unbroken answer; the grid marks where one
-   word ends and the next begins, the way printed arrowwords do. */
-function entryOf(x,core){
-  const letters=norm(x.w.replace(/[\s\-]+/g," ")).split(" ");
+function answerOf(w){
+  const words=norm(w.trim()).split(/\s+/);
   const splits=[]; let n=0;
-  for(let i=0;i<letters.length-1;i++){n+=letters[i].length;splits.push(n);}
-  const pattern=letters.length>1?" ("+letters.map(l=>l.length).join(",")+")":"";
-  return {...x,g:letters.join(""),splits,sc:shortClue(x.cl),pattern,core};
+  for(let i=0;i<words.length-1;i++){ n+=words[i].length; splits.push(n); }
+  return {w:w.trim(), g:words.join(""), splits,
+          pattern: words.length>1?" ("+words.map(x=>x.length).join(",")+")":""};
 }
-const BANK=ROWS.map(x=>entryOf(x,true)).filter(x=>x.g.length>=2 && x.g.length<=11);
-/* Everyday words the exam bank does not cover. They are grid mortar: they let a board
-   fill up instead of ending in dead squares, and they never gate a level. */
-const OWN=new Set(BANK.map(x=>x.w));
-const CONN=CONNRAW.trim().split("\n").map(l=>{const i=l.indexOf("|");
-    return {w:l.slice(0,i),cl:l.slice(i+1)};})
-  .filter(x=>!OWN.has(x.w)).map(x=>entryOf(x,false));
+const ROWS=RAW.trim().split("\n").map(line=>{
+  const [lv,lang,cl,ans]=line.split("|");
+  return {lv:+lv, lang, cl,
+          sc: lang==="en"?cl:shortClue(cl),
+          answers: ans.split(";").filter(Boolean).map(answerOf)};
+});
+const PLAN=[];
+ROWS.forEach(r=>{ (PLAN[r.lv]=PLAN[r.lv]||[]).push(r); });
+const LEVELS=PLAN.length;
+const PER_LEVEL=8;
 
 function rng(seed){let a=seed>>>0;return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
-
-/* The bank is overwhelmingly 3-5 letters, so length alone barely orders it. Blend
-   length with how much explaining a meaning needs: rarer words carry longer definitions. */
-const rangeOf=a=>{const mn=Math.min(...a),mx=Math.max(...a);return v=>(v-mn)/(mx-mn||1);};
-const nw=rangeOf(BANK.map(x=>x.g.length)), nc=rangeOf(BANK.map(x=>x.cl.length));
-const ORDERED=BANK.map(x=>({...x,d:0.6*nw(x.g.length)+0.4*nc(x.cl.length)})).sort((a,b)=>a.d-b.d);
-/* Long answers - mostly the idioms - stretch a board out of shape, so no level gets
-   more than two of them; the rest wait for the next board. */
-const PLAN=(()=>{
-  const queue=ORDERED.slice(), plan=[], pending=[];
-  let cur=[], longs=0;
-  const take=x=>{cur.push(x); if(x.g.length>=9) longs++;};
-  while(queue.length||pending.length){
-    let picked=null;
-    for(let i=0;i<pending.length;i++){
-      if(pending[i].g.length<9||longs<2){picked=pending.splice(i,1)[0];break;}
-    }
-    if(!picked){
-      while(queue.length){
-        const x=queue.shift();
-        if(x.g.length>=9&&longs>=2){pending.push(x);continue;}
-        picked=x;break;
-      }
-    }
-    if(!picked) break;
-    take(picked);
-    if(cur.length===PER_LEVEL){plan.push(cur);cur=[];longs=0;}
-  }
-  return plan;
-})();
-const LEVELS=PLAN.length;
 
 /* ---------- arrow-word builder ----------
    Every answer needs a clue square immediately before it: to its right for an across
    answer, above it for a down answer. One clue square can carry up to two clues. */
-function build(core, extra, seed, maxWords, span, maxTotal){
+function build(core, extra, seed, span, maxTotal){
   const r=rng(seed);
-  const bylen=(a,b)=>b.g.length-a.g.length||(r()-.5);
+  const bylen=(a,b)=>b.answers[0].g.length-a.answers[0].g.length||(r()-.5);
   const list=core.slice().sort(bylen).concat(extra.slice().sort(bylen));
-  const cells=new Map();                 // "r,c" -> {t:"L",ch,a,d} | {t:"C",a,d}
+  const cells=new Map();
   const placed=[];
+  const usedClue=new Set(), usedWord=new Set();
   const K=(a,b)=>a+","+b, at=(a,b)=>cells.get(K(a,b));
   const box={r0:0,c0:0,r1:0,c1:0};
   const growth=(r0,c0,r1,c1)=>{
     const w=Math.max(box.c1,c1)-Math.min(box.c0,c0)+1, h=Math.max(box.r1,r1)-Math.min(box.r0,r0)+1;
-    const w0=box.c1-box.c0+1, h0=box.r1-box.r0+1;
-    return w*h-w0*h0;
+    return w*h-(box.c1-box.c0+1)*(box.r1-box.r0+1);
   };
-
   function fits(w,r0,c0,dir){
     const L=w.length, dr=dir==="d"?1:0, dc=dir==="a"?1:0;
     const head=at(r0-dr,c0-dc);
-    if(head && (head.t!=="C" || head[dir]!=null)) return -1;  // free square, or clue square with room
+    if(head&&(head.t!=="C"||head[dir]!=null)) return -1;
     const tail=at(r0+dr*L,c0+dc*L);
-    if(tail && tail.t==="L") return -1;
+    if(tail&&tail.t==="L") return -1;
     let cross=0;
     for(let i=0;i<L;i++){
       const rr=r0+dr*i, cc=c0+dc*i, cell=at(rr,cc);
       if(cell){
         if(cell.t!=="L"||cell.ch!==w[i]) return -1;
-        if(cell[dir]) return -1;                              // already runs this way
+        if(cell[dir]) return -1;
         cross++;
       }else{
         const p1=dir==="a"?at(rr-1,cc):at(rr,cc-1);
         const p2=dir==="a"?at(rr+1,cc):at(rr,cc+1);
-        if((p1&&p1.t==="L")||(p2&&p2.t==="L")) return -1;     // no accidental parallel words
+        if((p1&&p1.t==="L")||(p2&&p2.t==="L")) return -1;
       }
     }
     return cross;
   }
-  function put(entry,r0,c0,dir){
-    const w=entry.g, dr=dir==="d"?1:0, dc=dir==="a"?1:0;
+  function put(entry,ans,r0,c0,dir){
+    const w=ans.g, dr=dir==="d"?1:0, dc=dir==="a"?1:0;
     const hk=K(r0-dr,c0-dc);
     const head=cells.get(hk)||{t:"C",a:null,d:null};
     head[dir]=placed.length;
@@ -318,102 +286,88 @@ function build(core, extra, seed, maxWords, span, maxTotal){
     for(let i=0;i<w.length;i++){
       const k=K(r0+dr*i,c0+dc*i);
       const cell=cells.get(k)||{t:"L",ch:w[i],a:false,d:false};
-      cell.ch=w[i]; cell[dir]=true;
-      cells.set(k,cell);
+      cell.ch=w[i]; cell[dir]=true; cells.set(k,cell);
     }
     box.r0=Math.min(box.r0,r0-dr); box.c0=Math.min(box.c0,c0-dc);
     box.r1=Math.max(box.r1,r0+dr*(w.length-1)); box.c1=Math.max(box.c1,c0+dc*(w.length-1));
-    placed.push({w:entry.w,g:w,cl:entry.cl,sc:entry.sc,pattern:entry.pattern,splits:entry.splits,core:entry.core,r:r0,c:c0,dir});
+    placed.push({w:ans.w,g:w,splits:ans.splits,pattern:ans.pattern,
+                 cl:entry.cl,sc:entry.sc,lang:entry.lang,core:entry.core,r:r0,c:c0,dir});
+    usedClue.add(entry.cl); usedWord.add(w);
   }
-
-  put(list[0],0,1,"a");
-  let pool=list.slice(1);
-  for(let pass=0;pass<3&&pool.length;pass++){
-    const left=[];
-    for(const cand of pool){
-      if(placed.length>=maxWords){left.push(cand);continue;}
-      const w=cand.g; let best=null, loose=null;
+  /* Best spot for one entry, considering every translation it accepts.
+     Only an exam word may break out of the target square - mortar must stay inside,
+     or the board sprawls and stops looking like a printed grid. */
+  function best(entry,limitSpan,allowLoose){
+    let win=null, loose=null;
+    for(const ans of entry.answers){
+      const w=ans.g;
+      if(usedWord.has(w)) continue;
       for(const p of placed){
         const pdr=p.dir==="d"?1:0, pdc=p.dir==="a"?1:0;
         for(let i=0;i<p.g.length;i++) for(let j=0;j<w.length;j++){
           if(p.g[i]!==w[j]) continue;
           const dir=p.dir==="a"?"d":"a";
-          const rr=p.r+pdr*i-(dir==="d"?j:0);
-          const cc=p.c+pdc*i-(dir==="a"?j:0);
-          const sc=fits(w,rr,cc,dir);
-          if(sc<=0) continue;
+          const rr=p.r+pdr*i-(dir==="d"?j:0), cc=p.c+pdc*i-(dir==="a"?j:0);
+          const cross=fits(w,rr,cc,dir);
+          if(cross<=0) continue;
           const ddr=dir==="d"?1:0, ddc=dir==="a"?1:0;
           const r1=rr+ddr*(w.length-1), c1=cc+ddc*(w.length-1);
           const h=Math.max(box.r1,r1)-Math.min(box.r0,rr-ddr)+1;
           const wd=Math.max(box.c1,c1)-Math.min(box.c0,cc-ddc)+1;
-          const cand2={s:sc*sc*20-growth(rr-ddr,cc-ddc,r1,c1)*1.1+r(),r:rr,c:cc,dir};
-          if(h<=span&&wd<=span){ if(!best||cand2.s>best.s) best=cand2; }
-          else if(!loose||cand2.s>loose.s) loose=cand2;
+          const cand={s:cross*cross*20-growth(rr-ddr,cc-ddc,r1,c1)*1.1+r(),ans,r:rr,c:cc,dir};
+          if(h<=limitSpan&&wd<=limitSpan){ if(!win||cand.s>win.s) win=cand; }
+          else if(h<=limitSpan+3&&wd<=limitSpan+3&&(!loose||cand.s>loose.s)) loose=cand;
         }
       }
-      const pick=best||loose;
-      if(pick) put(cand,pick.r,pick.c,pick.dir); else left.push(cand);
+    }
+    return win||(allowLoose?loose:null);
+  }
+
+  const first=list[0];
+  put(first,first.answers[0],0,1,"a");
+  let pool=list.slice(1);
+  for(let pass=0;pass<3&&pool.length;pass++){
+    const left=[];
+    for(const cand of pool){
+      if(placed.length>=maxTotal||usedClue.has(cand.cl)){left.push(cand);continue;}
+      const pick=best(cand,span,cand.core===true);
+      if(pick) put(cand,pick.ans,pick.r,pick.c,pick.dir); else left.push(cand);
     }
     if(left.length===pool.length) break;
     pool=left;
   }
 
-  /* mortar pass: pack the holes, staying inside the target square */
-  const used=new Set(placed.map(x=>x.w));
-  /* if a long answer already pushed the board past the target, fill the footprint it made */
-  const span2=Math.max(span, box.r1-box.r0+1, box.c1-box.c0+1);
-  const bag=CONN.filter(x=>!used.has(x.w));
+  /* mortar: pack the holes with nearby vocabulary, then seed fresh clusters in dead corners */
+  const span2=Math.max(span,box.r1-box.r0+1,box.c1-box.c0+1);
+  const bag=extra.filter(x=>!usedClue.has(x.cl));
   for(let i=bag.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[bag[i],bag[j]]=[bag[j],bag[i]];}
   for(let guard=0;guard<120&&placed.length<maxTotal;guard++){
-    let best=null;
+    let pick=null,who=null;
     for(const cand of bag){
-      if(used.has(cand.w)) continue;
-      const w=cand.g;
-      for(const pl of placed){
-        const pdr=pl.dir==="d"?1:0, pdc=pl.dir==="a"?1:0;
-        for(let i=0;i<pl.g.length;i++) for(let j=0;j<w.length;j++){
-          if(pl.g[i]!==w[j]) continue;
-          const dd=pl.dir==="a"?"d":"a";
-          const rr=pl.r+pdr*i-(dd==="d"?j:0), cc=pl.c+pdc*i-(dd==="a"?j:0);
-          const cross=fits(w,rr,cc,dd);
-          if(cross<=0) continue;
-          const ddr=dd==="d"?1:0, ddc=dd==="a"?1:0;
-          const r1=rr+ddr*(w.length-1), c1=cc+ddc*(w.length-1);
-          const h=Math.max(box.r1,r1)-Math.min(box.r0,rr-ddr)+1;
-          const wd=Math.max(box.c1,c1)-Math.min(box.c0,cc-ddc)+1;
-          if(h>span2||wd>span2) continue;
-          const sc2=cross*cross*22-growth(rr-ddr,cc-ddc,r1,c1)*1.8+w.length*0.8+r();
-          if(!best||sc2>best.s) best={s:sc2,cand,r:rr,c:cc,dir:dd};
+      if(usedClue.has(cand.cl)) continue;
+      const b=best(cand,span2,false);
+      if(b&&(!pick||b.s>pick.s)){pick=b;who=cand;}
+    }
+    if(!pick){
+      outer:
+      for(let rr=box.r0;rr<=box.r1;rr++) for(let cc=box.c0;cc<=box.c1;cc++){
+        if(at(rr,cc)) continue;
+        for(const dd of ["a","d"]) for(const cand of bag.slice(0,70)){
+          if(usedClue.has(cand.cl)) continue;
+          for(const ans of cand.answers){
+            if(usedWord.has(ans.g)) continue;
+            const ddr=dd==="d"?1:0, ddc=dd==="a"?1:0;
+            const r1=rr+ddr*(ans.g.length-1), c1=cc+ddc*(ans.g.length-1);
+            if(Math.max(box.r1,r1)-Math.min(box.r0,rr-ddr)+1>span2) continue;
+            if(Math.max(box.c1,c1)-Math.min(box.c0,cc-ddc)+1>span2) continue;
+            if(fits(ans.g,rr,cc,dd)!==0) continue;
+            pick={ans,r:rr,c:cc,dir:dd}; who=cand; break outer;
+          }
         }
       }
     }
-    /* Nothing can cross what is already there, so start a fresh cluster in the empty
-       corner: an arrowword does not need every answer joined to the rest. */
-    if(!best) best=seed(bag,used,span2);
-    if(!best) break;
-    put(best.cand,best.r,best.c,best.dir);
-    used.add(best.cand.w);
-  }
-
-  function seed(bag,used,span2){
-    const cands=bag.filter(x=>!used.has(x.w)).slice(0,70);
-    let best=null;
-    for(let rr=box.r0;rr<=box.r1;rr++) for(let cc=box.c0;cc<=box.c1;cc++){
-      if(at(rr,cc)) continue;
-      for(const dd of ["a","d"]){
-        const ddr=dd==="d"?1:0, ddc=dd==="a"?1:0;
-        for(const cand of cands){
-          const w=cand.g;
-          const r1=rr+ddr*(w.length-1), c1=cc+ddc*(w.length-1);
-          if(Math.max(box.r1,r1)-Math.min(box.r0,rr-ddr)+1>span2) continue;
-          if(Math.max(box.c1,c1)-Math.min(box.c0,cc-ddc)+1>span2) continue;
-          if(fits(w,rr,cc,dd)!==0) continue;
-          const s2=w.length*3-growth(rr-ddr,cc-ddc,r1,c1)*2+r();
-          if(!best||s2>best.s) best={s:s2,cand,r:rr,c:cc,dir:dd};
-        }
-      }
-    }
-    return best;
+    if(!pick) break;
+    put(who,pick.ans,pick.r,pick.c,pick.dir);
   }
 
   let minR=1e9,minC=1e9,maxR=-1e9,maxC=-1e9;
@@ -426,22 +380,22 @@ function build(core, extra, seed, maxWords, span, maxTotal){
   return {rows,cols,map,entries,fill:cells.size/(rows*cols)};
 }
 let shuffleSalt=0;
-/* A word that refuses to interlock would leave the grid thin, so a level may borrow
-   connectors of similar difficulty — meeting a word twice is good revision. */
+/* Levels either side supply the mortar - meeting a word twice is good revision. */
 function neighbours(k){
-  const c=k*PER_LEVEL, from=Math.max(0,c-24), to=Math.min(ORDERED.length,c+PER_LEVEL+24);
-  const own=new Set(PLAN[k].map(x=>x.w));
-  return ORDERED.slice(from,to).filter(x=>!own.has(x.w));
+  const out=[];
+  for(let d=-7;d<=7;d++){ const i=k+d; if(d&&i>=0&&i<LEVELS) out.push(...PLAN[i]); }
+  return out;
 }
 const SPAN=13, MAX_WORDS=44;
 function buildLevel(k){
   let best=null;
-  const extra=neighbours(k);
+  const core=PLAN[k].map(x=>({...x,core:true}));
+  const extra=neighbours(k).map(x=>({...x,core:false}));
   for(let t=0;t<6;t++){
-    const g=build(PLAN[k], t<2?[]:extra, (k+1)*7919+t*104729+shuffleSalt, PER_LEVEL, SPAN, MAX_WORDS);
+    const g=build(core, t<2?[]:extra, (k+1)*7919+t*104729+shuffleSalt, SPAN, MAX_WORDS);
     if(!g) continue;
-    const missing=PER_LEVEL-g.entries.filter(e=>e.core).length;
-    const over=Math.max(0,Math.max(g.rows,g.cols)-15);
+    const missing=core.length-g.entries.filter(e=>e.core).length;
+    const over=Math.max(0,Math.max(g.rows,g.cols)-14);
     const s=g.fill*100+g.entries.length*2-missing*16-over*10;
     if(!best||s>best.s) best={g,s};
   }
@@ -469,11 +423,11 @@ function renderMap(){
   host.innerHTML="";
   for(let c=0;c<chapters;c++){
     const from=c*per, to=Math.min(LEVELS,from+per);
-    const ds=PLAN.slice(from,to).flat().map(x=>x.d);
-    const avg=Math.round(ds.reduce((a,b)=>a+b,0)/ds.length*100);
+    const pool=PLAN.slice(from,to).flat();
+    const share=Math.round(pool.filter(x=>x.lang==="en").length/pool.length*100);
     const sec=document.createElement("section");sec.className="chapter";
     sec.innerHTML=`<div class="ch-head"><span class="ch-num">${c+1}</span>
-      <h2>${CH_NAMES[c%CH_NAMES.length]}</h2><em>דרגת קושי ${avg}</em><span class="ch-rule"></span></div>
+      <h2>${CH_NAMES[c%CH_NAMES.length]}</h2><em>${share}% אנגלית</em><span class="ch-rule"></span></div>
       <div class="levels"></div>`;
     const box=sec.querySelector(".levels");
     for(let i=from;i<to;i++){
@@ -484,7 +438,7 @@ function renderMap(){
       const st=rec?rec.stars:0;
       b.innerHTML=`<div class="n">${i+1}</div><div class="meta">${
         locked?"נעול":rec?`<span class="stars">${"★".repeat(st)}<span class="off">${"★".repeat(3-st)}</span></span>`
-        :`${PER_LEVEL} מילות מבחן`}</div>`;
+        :`${PLAN[i].length} מילות מבחן`}</div>`;
       b.onclick=()=>startLevel(i);
       box.appendChild(b);
     }
@@ -549,7 +503,7 @@ function renderGrid(){
       if(cell.d!=null) slots.push({dir:"d",i:cell.d});
       d.innerHTML=slots.map(s=>{
         const e=G.entries[s.i], text=e.sc+e.pattern;
-        return `<div class="slot dir-${s.dir}" data-e="${s.i}" style="font-size:${clueSize(text.length,slots.length)}">`+
+        return `<div class="slot dir-${s.dir} ${e.lang}" data-e="${s.i}" style="font-size:${clueSize(text.length,slots.length)}">`+
           `<span>${e.sc}${e.pattern?`<small>${e.pattern}</small>`:""}</span>`+
           `<i class="${s.dir==="a"?"left":"down"}">${s.dir==="a"?"◀":"▼"}</i></div>`;}).join("");
       d.onclick=ev=>{
@@ -611,7 +565,10 @@ function paint(){
     d.classList.toggle("hl",on);
   });
   if(e){
-    $("clText").textContent=e.cl+(e.pattern||"")+":";
+    const t=$("clText");
+    t.textContent=e.cl+(e.pattern||"")+":";
+    t.dir=e.lang==="en"?"ltr":"rtl";
+    t.classList.toggle("en",e.lang==="en");
     $("clSkel").innerHTML=skeleton(e);
   }
   const n=G.entries.filter(solved).length, all=G.entries.length;
@@ -710,7 +667,7 @@ function checkDone(){
   $("mdTitle").textContent="שלב "+(LV+1)+" הושלם";
   $("mdSub").textContent=`${mmss(elapsed)} · ${hints===0?"בלי רמזים":hints+" רמזים"} · ‎+${xp} נקודות`;
   $("mdWords").innerHTML=G.entries.filter(e=>e.core)
-    .map(e=>`<div><b>${e.w}</b> — ${e.cl}</div>`).join("");
+    .map(e=>`<div><b>${e.w}</b> — <span dir="${e.lang==="en"?"ltr":"rtl"}">${e.cl}</span></div>`).join("");
   $("mdNext").style.display=LV+1<LEVELS?"":"none";
   $("scrim").hidden=false;
 }

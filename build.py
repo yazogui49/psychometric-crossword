@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Assemble index.html from the template and the word banks.
+"""Assemble index.html from the template and the word bank.
 
-The template is body content only, so that the same file can be published as a
-Claude artifact (which supplies its own document shell). For the standalone file
-we wrap it in a real document - without the viewport meta a phone renders the
-board at desktop width.
+The template is body content only, so the same file can be published as a Claude
+artifact (which supplies its own document shell). For the standalone file we wrap it
+in a real document - without the viewport meta a phone renders the board at desktop
+width. Regenerate data/bank.txt with make_bank.py after editing a source list.
 """
 import pathlib
 
 root = pathlib.Path(__file__).parent
-words = (root / "data/allwords.txt").read_text(encoding="utf-8").strip()
-conn = (root / "data/conn.txt").read_text(encoding="utf-8").strip()
-body = (root / "template.html").read_text(encoding="utf-8")
-body = body.replace("__WORDS__", words).replace("__CONN__", conn)
-assert "__WORDS__" not in body and "__CONN__" not in body
+bank = (root / "data/bank.txt").read_text(encoding="utf-8").strip()
+body = (root / "template.html").read_text(encoding="utf-8").replace("__BANK__", bank)
+assert "__BANK__" not in body
 
+levels = len({l.split("|")[0] for l in bank.splitlines()})
 doc = f"""<!doctype html>
 <html lang="he" dir="rtl">
 <head>
@@ -32,4 +31,4 @@ doc = f"""<!doctype html>
 </html>
 """
 (root / "index.html").write_text(doc, encoding="utf-8")
-print(f"index.html: {len(words.splitlines())} exam entries, {len(conn.splitlines())} connectors")
+print(f"index.html: {len(bank.splitlines())} entries across {levels} levels")
