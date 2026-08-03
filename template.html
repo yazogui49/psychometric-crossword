@@ -3,7 +3,7 @@
 /* One committed world: the dark printed-grid look of a Hebrew arrowword app. */
 :root{
   --bg:#000000; --panel:#1C1C1E; --panel-2:#2C2C2E; --sheet:#151517;
-  --cell:#2C2C2E; --block:#0E0E10; --line:#6E6E73;
+  --cell:#2C2C2E; --block:#000000; --line:#6E6E73;
   --clue-bg:#8E8E93; --clue-ink:#FFFFFF;
   --ink:#FFFFFF; --ink-2:#AEAEB2; --ink-3:#8A8A8E;
   --accent:#0A84FF; --accent-soft:#12365F;
@@ -53,7 +53,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-r
   border-top:1px solid var(--line);border-right:1px solid var(--line)}
 .cell{width:var(--size);height:var(--size);position:relative;background:var(--cell);
   border-bottom:1px solid var(--line);border-left:1px solid var(--line)}
-.cell.block{background:var(--block)}
+.cell.block{background:var(--block);border-color:var(--block)}
 .cell.letter{cursor:pointer}
 .cell.letter .ltr{position:absolute;inset:0;display:grid;place-items:center;
   font-family:var(--display);font-size:calc(var(--size)*.6);line-height:1;color:var(--ink)}
@@ -68,15 +68,17 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-r
 .cell.cluecell{background:var(--clue-bg);display:flex;flex-direction:column;cursor:pointer;overflow:hidden}
 .cell.cluecell.hl{background:#B9B9BE}
 .slot{flex:1 1 0;position:relative;display:flex;align-items:center;justify-content:center;
-  padding:1px 3px 1px 7px;min-height:0;text-align:center}
+  padding:1px 3px;min-height:0;text-align:center}
+.slot.dir-a{padding-left:13px}
+.slot.dir-d{padding-bottom:10px}
 .slot+.slot{border-top:1px solid rgba(0,0,0,.35)}
 .slot span{color:var(--clue-ink);line-height:1.06;font-weight:600;letter-spacing:-.01em;
   overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;word-break:break-word}
 .slot small{font-weight:400;opacity:.85}
 .slot i{position:absolute;font-style:normal;color:#fff;line-height:1;
   font-size:max(10px,calc(var(--size)*.26));text-shadow:0 0 2px rgba(0,0,0,.4)}
-.slot i.left{left:0px;top:50%;transform:translateY(-50%)}
-.slot i.down{bottom:-2px;left:50%;transform:translateX(-50%)}
+.slot i.left{left:1px;top:50%;transform:translateY(-50%)}
+.slot i.down{bottom:0;left:50%;transform:translateX(-50%)}
 .slot.on{background:rgba(10,132,255,.32)}
 .slot.done::before{content:"✓";position:absolute;left:2px;bottom:0;font-size:max(9px,calc(var(--size)*.2));
   color:#1B8F45;line-height:1}
@@ -344,7 +346,7 @@ function build(core, extra, seed, maxWords, span, maxTotal){
           const r1=rr+ddr*(w.length-1), c1=cc+ddc*(w.length-1);
           const h=Math.max(box.r1,r1)-Math.min(box.r0,rr-ddr)+1;
           const wd=Math.max(box.c1,c1)-Math.min(box.c0,cc-ddc)+1;
-          const cand2={s:sc*14-growth(rr-ddr,cc-ddc,r1,c1)*0.8+r(),r:rr,c:cc,dir};
+          const cand2={s:sc*sc*20-growth(rr-ddr,cc-ddc,r1,c1)*1.1+r(),r:rr,c:cc,dir};
           if(h<=span&&wd<=span){ if(!best||cand2.s>best.s) best=cand2; }
           else if(!loose||cand2.s>loose.s) loose=cand2;
         }
@@ -362,7 +364,7 @@ function build(core, extra, seed, maxWords, span, maxTotal){
   const span2=Math.max(span, box.r1-box.r0+1, box.c1-box.c0+1);
   const bag=CONN.filter(x=>!used.has(x.w));
   for(let i=bag.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[bag[i],bag[j]]=[bag[j],bag[i]];}
-  for(let guard=0;guard<80&&placed.length<maxTotal;guard++){
+  for(let guard=0;guard<120&&placed.length<maxTotal;guard++){
     let best=null;
     for(const cand of bag){
       if(used.has(cand.w)) continue;
@@ -380,14 +382,38 @@ function build(core, extra, seed, maxWords, span, maxTotal){
           const h=Math.max(box.r1,r1)-Math.min(box.r0,rr-ddr)+1;
           const wd=Math.max(box.c1,c1)-Math.min(box.c0,cc-ddc)+1;
           if(h>span2||wd>span2) continue;
-          const sc2=cross*14-growth(rr-ddr,cc-ddc,r1,c1)*1.6+w.length*0.6+r();
+          const sc2=cross*cross*22-growth(rr-ddr,cc-ddc,r1,c1)*1.8+w.length*0.8+r();
           if(!best||sc2>best.s) best={s:sc2,cand,r:rr,c:cc,dir:dd};
         }
       }
     }
+    /* Nothing can cross what is already there, so start a fresh cluster in the empty
+       corner: an arrowword does not need every answer joined to the rest. */
+    if(!best) best=seed(bag,used,span2);
     if(!best) break;
     put(best.cand,best.r,best.c,best.dir);
     used.add(best.cand.w);
+  }
+
+  function seed(bag,used,span2){
+    const cands=bag.filter(x=>!used.has(x.w)).slice(0,70);
+    let best=null;
+    for(let rr=box.r0;rr<=box.r1;rr++) for(let cc=box.c0;cc<=box.c1;cc++){
+      if(at(rr,cc)) continue;
+      for(const dd of ["a","d"]){
+        const ddr=dd==="d"?1:0, ddc=dd==="a"?1:0;
+        for(const cand of cands){
+          const w=cand.g;
+          const r1=rr+ddr*(w.length-1), c1=cc+ddc*(w.length-1);
+          if(Math.max(box.r1,r1)-Math.min(box.r0,rr-ddr)+1>span2) continue;
+          if(Math.max(box.c1,c1)-Math.min(box.c0,cc-ddc)+1>span2) continue;
+          if(fits(w,rr,cc,dd)!==0) continue;
+          const s2=w.length*3-growth(rr-ddr,cc-ddc,r1,c1)*2+r();
+          if(!best||s2>best.s) best={s:s2,cand,r:rr,c:cc,dir:dd};
+        }
+      }
+    }
+    return best;
   }
 
   let minR=1e9,minC=1e9,maxR=-1e9,maxC=-1e9;
@@ -407,7 +433,7 @@ function neighbours(k){
   const own=new Set(PLAN[k].map(x=>x.w));
   return ORDERED.slice(from,to).filter(x=>!own.has(x.w));
 }
-const SPAN=13, MAX_WORDS=36;
+const SPAN=13, MAX_WORDS=44;
 function buildLevel(k){
   let best=null;
   const extra=neighbours(k);
@@ -523,7 +549,7 @@ function renderGrid(){
       if(cell.d!=null) slots.push({dir:"d",i:cell.d});
       d.innerHTML=slots.map(s=>{
         const e=G.entries[s.i], text=e.sc+e.pattern;
-        return `<div class="slot" data-e="${s.i}" style="font-size:${clueSize(text.length,slots.length)}">`+
+        return `<div class="slot dir-${s.dir}" data-e="${s.i}" style="font-size:${clueSize(text.length,slots.length)}">`+
           `<span>${e.sc}${e.pattern?`<small>${e.pattern}</small>`:""}</span>`+
           `<i class="${s.dir==="a"?"left":"down"}">${s.dir==="a"?"◀":"▼"}</i></div>`;}).join("");
       d.onclick=ev=>{
