@@ -81,13 +81,14 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-r
 .cell.cluecell{background:var(--clue-bg);display:flex;flex-direction:column;cursor:pointer;overflow:hidden}
 .cell.cluecell.hl{background:#B9B9BE}
 .slot{flex:1 1 0;position:relative;display:flex;align-items:center;justify-content:center;
-  padding:1px 3px;min-height:0;text-align:center}
+  padding:1px 2px;min-height:0;text-align:center;overflow:hidden}
 .slot.en span{direction:ltr;unicode-bidi:isolate;font-weight:700;letter-spacing:0}
 .slot.dir-a{padding-left:13px}
 .slot.dir-d{padding-bottom:10px}
 .slot+.slot{border-top:1px solid rgba(0,0,0,.35)}
-.slot span{color:var(--clue-ink);line-height:1.06;font-weight:600;letter-spacing:-.01em;
-  overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;word-break:break-word}
+.slot span{color:var(--clue-ink);line-height:1.08;font-weight:600;letter-spacing:-.01em;
+  display:block;max-width:100%;overflow:hidden;
+  word-break:keep-all;overflow-wrap:normal;hyphens:none}
 .slot small{font-weight:400;opacity:.85}
 .slot i{position:absolute;font-style:normal;color:#fff;line-height:1;
   font-size:max(10px,calc(var(--size)*.26));text-shadow:0 0 2px rgba(0,0,0,.4)}
@@ -3241,6 +3242,39 @@ function build(core, extra, seed, span, maxTotal){
     put(who,pick.ans,pick.r,pick.c,pick.dir);
   }
 
+  /* Last pass: walk the black holes one by one and try to run a word straight through
+     each of them. A printed arrowword has no holes at all; with a fixed word list this
+     is as close as it gets. */
+  for(let sweep=0;sweep<3;sweep++){
+    let filled=0;
+    for(let rr=box.r0;rr<=box.r1;rr++) for(let cc=box.c0;cc<=box.c1;cc++){
+      if(at(rr,cc)||placed.length>=maxTotal) continue;
+      let hit=null;
+      for(const cand of bag){
+        if(usedClue.has(cand.cl)) continue;
+        for(const ans of cand.answers){
+          if(usedWord.has(ans.g)) continue;
+          const L=ans.g.length;
+          for(const dd of ["a","d"]){
+            const ddr=dd==="d"?1:0, ddc=dd==="a"?1:0;
+            for(let j=0;j<L;j++){
+              const r0=rr-ddr*j, c0=cc-ddc*j;
+              const r1=r0+ddr*(L-1), c1=c0+ddc*(L-1);
+              if(Math.max(box.r1,r1)-Math.min(box.r0,r0-ddr)+1>span2) continue;
+              if(Math.max(box.c1,c1)-Math.min(box.c0,c0-ddc)+1>span2) continue;
+              const cross=fits(ans.g,r0,c0,dd);
+              if(cross<0) continue;
+              const sc=cross*8+L-growth(r0-ddr,c0-ddc,r1,c1)*3;
+              if(!hit||sc>hit.sc) hit={sc,cand,ans,r:r0,c:c0,dir:dd};
+            }
+          }
+        }
+      }
+      if(hit){ put(hit.cand,hit.ans,hit.r,hit.c,hit.dir); filled++; }
+    }
+    if(!filled) break;
+  }
+
   let minR=1e9,minC=1e9,maxR=-1e9,maxC=-1e9;
   cells.forEach((_,k)=>{const [a,b]=k.split(",").map(Number);
     minR=Math.min(minR,a);maxR=Math.max(maxR,a);minC=Math.min(minC,b);maxC=Math.max(maxC,b);});
@@ -3254,10 +3288,10 @@ let shuffleSalt=0;
 /* Levels either side supply the mortar - meeting a word twice is good revision. */
 function neighbours(k){
   const out=[];
-  for(let d=-7;d<=7;d++){ const i=k+d; if(d&&i>=0&&i<LEVELS) out.push(...PLAN[i]); }
+  for(let d=-16;d<=16;d++){ const i=k+d; if(d&&i>=0&&i<LEVELS) out.push(...PLAN[i]); }
   return out;
 }
-const SPAN=13, MAX_WORDS=44;
+const SPAN=13, MAX_WORDS=60;
 function buildLevel(k){
   let best=null;
   const core=PLAN[k].map(x=>({...x,core:true}));
@@ -3332,7 +3366,7 @@ function startLevel(i){
   cur={r:first.r,c:first.c}; dir=first.dir;
   t0=Date.now(); clearInterval(tick); tick=setInterval(clock,1000); clock();
   $("strip").hidden=false;
-  renderGrid(); show("scPlay"); fitCell(); paint();
+  renderGrid(); show("scPlay"); fitCell(); fitClues(); paint();
 }
 function wordsAt(r,c){return G.entries.filter(e=>e.dir==="a"
   ? e.r===r&&c>=e.c&&c<e.c+e.g.length
@@ -3347,11 +3381,28 @@ function fitCell(){
   const size=Math.max(38,Math.min(56,Math.floor(avail/G.cols)));
   $("grid").style.setProperty("--size",size+"px");
 }
-addEventListener("resize",fitCell);
-/* Short clues are set big, the way the printed squares do it; long ones shrink to fit. */
-function clueSize(len,slots){
-  const base = len<=5 ? .30 : len<=9 ? .215 : len<=15 ? .175 : len<=24 ? .148 : .128;
-  return `calc(var(--size) * ${(base*(slots>1?.82:1)).toFixed(3)})`;
+addEventListener("resize",()=>{fitCell();fitClues();});
+/* Short clues are set big, the way the printed squares do it; long ones shrink to fit.
+   This is only a first guess - fitClues() then measures and shrinks until nothing spills,
+   because a clue must never be cut mid-word. */
+function clueSize(text,slots){
+  const longest=Math.max(...text.split(/\s+/).map(w=>w.length),1);
+  const byTotal = text.length<=5 ? .30 : text.length<=9 ? .215 : text.length<=15 ? .175
+                : text.length<=24 ? .148 : .128;
+  const byWord  = 1.7/longest;                       // the longest word has to sit on one line
+  return `calc(var(--size) * ${(Math.min(byTotal,byWord)*(slots>1?.82:1)).toFixed(3)})`;
+}
+function fitClues(){
+  $("grid").querySelectorAll(".slot").forEach(sl=>{
+    const span=sl.firstElementChild;
+    let size=parseFloat(getComputedStyle(sl).fontSize);
+    for(let i=0;i<14;i++){
+      if(span.scrollWidth<=sl.clientWidth-1 && span.scrollHeight<=sl.clientHeight-1) break;
+      size-=Math.max(.4,size*.08);
+      if(size<5){size=5;sl.style.fontSize=size+"px";break;}
+      sl.style.fontSize=size+"px";
+    }
+  });
 }
 function renderGrid(){
   const g=$("grid");
@@ -3374,7 +3425,7 @@ function renderGrid(){
       if(cell.d!=null) slots.push({dir:"d",i:cell.d});
       d.innerHTML=slots.map(s=>{
         const e=G.entries[s.i], text=e.sc+e.pattern;
-        return `<div class="slot dir-${s.dir} ${e.lang}" data-e="${s.i}" style="font-size:${clueSize(text.length,slots.length)}">`+
+        return `<div class="slot dir-${s.dir} ${e.lang}" data-e="${s.i}" style="font-size:${clueSize(text,slots.length)}">`+
           `<span>${e.sc}${e.pattern?`<small>${e.pattern}</small>`:""}</span>`+
           `<i class="${s.dir==="a"?"left":"down"}">${s.dir==="a"?"◀":"▼"}</i></div>`;}).join("");
       d.onclick=ev=>{
