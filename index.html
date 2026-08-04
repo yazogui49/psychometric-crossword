@@ -18,7 +18,7 @@
 :root{
   --paper:#EDEAE0; --paper-2:#E4E0D4; --paper-3:#DAD5C6; --card:#F4F1E9;
   --ink:#14140F; --ink-2:#3D3D33; --ink-3:#6E6E60; --ink-4:#9A9689;
-  --rule:#14140F; --hair:#B9B5A6;
+  --rule:#14140F; --hair:#B9B5A6; --block:#BCB7A7;
   --pencil:#C0392B; --pencil-soft:#F1D9D4;
   --graphite:#5B5B50; --ochre:#A8760F;
   --size:44px;
@@ -72,7 +72,7 @@ button:focus-visible{outline:2px solid var(--pencil);outline-offset:2px}
   border-top:2px solid var(--ink);border-right:2px solid var(--ink)}
 .cell{width:var(--size);height:var(--size);position:relative;background:var(--card);
   border-bottom:1px solid var(--ink);border-left:1px solid var(--ink)}
-.cell.block{background:var(--ink);border-color:var(--ink)}
+.cell.block{background:var(--block);border-color:var(--block)}
 .cell.letter{cursor:pointer}
 .cell.letter .ltr{position:absolute;inset:0;display:grid;place-items:center;
   font-family:var(--display);font-size:calc(var(--size)*.62);line-height:1;color:var(--ink)}
@@ -88,11 +88,11 @@ button:focus-visible{outline:2px solid var(--pencil);outline-offset:2px}
 .slot{flex:1 1 0;position:relative;display:flex;align-items:center;justify-content:center;
   padding:1px 2px;min-height:0;text-align:center;overflow:hidden}
 .slot.en span{direction:ltr;unicode-bidi:isolate;font-weight:700;letter-spacing:0}
-.slot.dir-a{padding-left:12px}
-.slot.dir-d{padding-bottom:9px}
+.slot.dir-a{padding-left:11px}
+.slot.dir-d{padding-bottom:8px}
 .slot+.slot{border-top:1px solid var(--hair)}
 .slot span{color:var(--ink);line-height:1.08;font-weight:600;letter-spacing:-.01em;
-  display:block;max-width:100%;overflow:hidden;
+  display:block;width:100%;max-height:100%;overflow:hidden;
   word-break:keep-all;overflow-wrap:normal;hyphens:none}
 .slot small{font-weight:400;color:var(--ink-2)}
 .slot i{position:absolute;font-style:normal;color:var(--ink);line-height:1;
@@ -3445,10 +3445,10 @@ function fitClues(){
   $("grid").querySelectorAll(".slot").forEach(sl=>{
     const span=sl.firstElementChild;
     let size=parseFloat(getComputedStyle(sl).fontSize);
-    for(let i=0;i<14;i++){
-      if(span.scrollWidth<=sl.clientWidth-1 && span.scrollHeight<=sl.clientHeight-1) break;
-      size-=Math.max(.4,size*.08);
-      if(size<5){size=5;sl.style.fontSize=size+"px";break;}
+    for(let i=0;i<22;i++){
+      if(span.scrollWidth<=span.clientWidth && span.scrollHeight<=span.clientHeight) break;
+      size-=Math.max(.3,size*.07);
+      if(size<4.5){size=4.5;sl.style.fontSize=size+"px";break;}
       sl.style.fontSize=size+"px";
     }
   });
