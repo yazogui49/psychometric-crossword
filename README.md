@@ -14,6 +14,7 @@ one interlocks best — the pattern above the grid shows the letter count.
 - `data/en_source.txt` — English list, `word|translation;translation;…` (parsed from the source PDF)
 - `data/bank.txt` — generated: `level|language|clue|answers`
 - `make_bank.py` — rebuilds `bank.txt`: difficulty order, level grouping, length spreading
+  (needs `python3 -m pip install --user wordfreq`; only when regenerating)
 - `template.html` — the app; `__BANK__` is filled in at build time
 - `index.html` — the built, self-contained page (open it directly in a browser)
 
@@ -21,6 +22,12 @@ one interlocks best — the pattern above the grid shows the letter count.
 ```sh
 python3 make_bank.py && python3 build.py
 ```
+
+## Difficulty
+Levels are ordered by corpus word frequency, which is U-shaped for this material: a word
+nobody uses is hard, and a word everybody uses is *also* hard when it turns up on this
+list, because the sense being tested is not the familiar one — את is a spade, בית is to
+domesticate, מעל is to embezzle. The easy words sit in the middle of the range.
 
 ## Notes
 - Boards are generated in the browser from a seed derived from the level number, so a given
